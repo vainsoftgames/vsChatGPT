@@ -36,4 +36,14 @@ To start using it:
   $file = Local path to audio file
   $prompt = Text to help guide the transcription with corrections
   $chatgpt->createTranscription($file, $prompt);
+  
+  
+  // Get list of all models you have access to
+  $chatgpt->checkModels();
+ 
+  // See if you have access to a single model
+  $chatgpt->checkModels('model_name');
+  
+  // See if you have access to multiple models
+  $chatgpt->checkModels(['gpt-4','gpt-3.5-turbo']);
 ```
