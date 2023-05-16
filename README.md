@@ -5,6 +5,7 @@ ChatGPT in PHP
 
 Add vsChatGPT to your script
 ```
+  define('API_KEY', 'YOUR OPENAI KEY');
   require('vsChatGPT.php');
 ```
 
