@@ -46,6 +46,57 @@
 
 			return json_decode($response, true);
 		}
+		/*
+			Get list of models available to account
+			@para
+				$model		STRING|ARRAY (Model you are looking for or default to false to return all models)
+
+			@return
+				$response	ARRAY (List of models)
+					id		STRING
+					object		STRING (model)
+					created		INT16	UNIX Timestamp
+					owned_by	STRING
+					permission	ARRAY
+						id			STRING
+						object			STRING
+						created			INT16 Unix Timestamp
+						allow_create_engine	BOOLEAN
+						allow_sampling		BOOLEAN
+						allow_logprobs		BOOLEAN
+						allow_search_indices	BOOLEAN
+						allow_view		BOOLEAN
+						allow_fine_tuning	BOOLEAN
+						organization		STRING
+						group			STRING
+						is_blocking		BOOLEAN
+					root		STRING
+					parent		STRING
+		*/
+		public function checkModels($model=false){
+			// Check if user supplied string array
+			if(is_string($model) && strpos(',', $model)) $model = explode(',', $model);
+
+			$endpoint = 'models';
+			if($model && is_string($model)) $endpoint .= '/'. $model;
+
+			$results = $this->callAPI($endpoint, NULL, 'GET');
+			// Single model returns don't return an list array
+			if($results && isset($results['id'])) return [$results];
+			else if($results && isset($results['data'])) {
+				// Check if user is looking for multiple models
+				if(is_array($model)){
+					$newList = [];
+					foreach($results['data'] as $item){
+						if(in_array($item['id'], $model)) $newList[] = $item;
+					}
+					
+					return $newList;
+				}
+				else return $results['data'];
+			}
+			else return false;
+		}
 
 
 
