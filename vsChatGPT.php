@@ -2,6 +2,7 @@
 	class vsChatGPT {
 		private $api_host = 'https://api.openai.com/v1/';
 		public $userID;
+		public $timeout = 120;
 
 		public function __construct(){
 		}
@@ -23,7 +24,7 @@
             $headers[] = 'OpenAI-Organization: '. OpenID_OrgID; 
 		
 			$ch = curl_init($this->api_host . $request);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+            curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
             curl_setopt($ch, CURLOPT_HEADER, 0);
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
