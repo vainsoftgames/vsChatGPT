@@ -127,6 +127,189 @@
 		}
 		
 		
+		/****
+		 Files
+		 ****/
+		public function file_list(){
+			$results = $this->callAPI('files', false, 'GET');
+			if($results && isset($results['data'])) return $results['data'];
+			else return false;
+		}
+
+		/*
+			Upload asset for other features
+			@para
+				$file		STRING	File path to asset
+				$purpose	STRING	Whats the purpose for this asset? Default "fine-tune"
+
+			@return
+				$results	ARRAY
+					object			STRING Type of file
+					id				STRING 
+					purpose			STRING
+					filename		STRING Full path of local upload path
+					bytes			INT16
+					created_at		INT16 UnixTimestamp
+					status			STRING Status of file upload
+					status_details	NULL
+		*/
+		public function file_upload($file, $purpose='fine-tune'){
+			if(!file_exists($file)) return ['status'=>'error','msg'=>'file not found'];
+
+			$para = [];
+			$para['purpose'] = $purpose;
+			$para['file'] = curl_file_create($file, 'chatgpt.jsonl');
+			return $this->callAPI('files', $para);
+		}
+		/*
+			Delete asset (must be owner of asset)
+			@para
+				$fileID	STRING id of asset
+
+			@return
+				$response	array
+					id		STRING
+					deleted	BOOLEAN
+					error	ARRAY	If file is not found or other error
+		*/
+		public function file_delete($fileID){
+			$results = $this->callAPI("files/{$fileID}", false, 'DELETE');
+			if(isset($results['deleted']) && $results['deleted']) return true;
+			else if(isset($results['error'])) return $results['error'];
+			else return $results;
+		}
+		/*
+			Returns details about file, look at Upload for returned object
+
+			@para
+				$fileID		STRING
+			
+			@return
+				$response	ARRAY
+					object			STRING Type of file
+					id				STRING 
+					purpose			STRING
+					filename		STRING Full path of local upload path
+					bytes			INT16
+					created_at		INT16 UnixTimestamp
+					status			STRING Status of file upload
+					status_details	NULL
+		*/
+		public function file_get($fileID){
+			return $this->callAPI("files/{$fileID}", false, 'GET');
+		}
+		/*
+			Returns contents of file
+
+			@para
+				$fileID		STRING
+			
+		*/
+		public function file_getContent($fileID){
+			return $this->callAPI("files/{$fileID}/content", false, 'GET');
+		}
+
+		/****
+		 FineTuning [WIP]
+		 ****/
+		/*
+			Prep data for finetuning, it wants a JSON List (jsonl file)
+
+			@para
+				$payload	ARRAY Array of json encoded objects
+					prompt		STRING	The question
+					completion	STRING	The answer
+
+			@return
+				$response	STRING	Multi-line list of json encoded objects
+		*/
+		public function prepFinetune($payload){
+			if(!is_array($payload)) $payload = [$payload];
+			
+			return implode("\n", $payload);
+		}
+		/*
+			Request finetuning on a file (jsonl) you uploaded
+			
+			@para
+				$fileID		STRING	`id` from file_upload
+				$model		STRING	What model you want to train against, Defaults to curie
+				$para		ARRAY	All optional
+					validation_file					STRING The ID of an uploaded file that contains validation data.
+					n_epochs
+					batch_size
+					learning_rate_multiplier
+					prompt_loss_weight
+					compute_classification_metrics
+					classification_n_classes
+					classification_positive_class
+					classification_betas
+					suffix							STRING If you want to prepend characters to your trained model name (ex: ada:ft-your-org:custom-model-name-2022-02-15-04-21-04)
+			
+			@return
+				$response	ARRAY
+					id							STRING
+					object						STRING
+					model						STRING
+					created_at					INT16	UnixTimestamp
+					events						ARRAY
+						object
+						created_at
+						level
+						message
+					fine_tuned_model			ARRAY
+					hyperparams					ARRAY
+						batch_size
+						learning_rate_multiplier
+						n_epochs
+						prompt_loss_weight
+					result_files				ARRAY
+					status						STRING
+					validation_files			ARRAY
+					training_files				ARRAY
+					updated_at					INT16	UnixTimestamp
+		*/
+		public function finetune_train($fileID, $model=false, $para=false){
+			$para = (isset($para) && is_array($para) ? $para : []);
+			if($model) $para['model'] = $model;
+			$para['training_file'] = $fileID;
+
+			return $this->callAPI("fine-tunes", $para);
+		}
+		/* Get FineTuning Jobs List [WIP] */
+		public function finetune_list(){
+			return $this->callAPI('fine-tunes', false, 'GET');
+		}
+		/* Get FineTuning Job File [WIP] */
+		public function finetune_file($fine_tune_id){
+			return $this->callAPI("fine-tunes/{$fine_tune_id}", false, 'GET');
+		}
+		/* Cancel FineTuning Job [WIP] */
+		public function finetune_cancel($fine_tune_id){
+			return $this->callAPI("fine-tunes/{$fine_tune_id}/cancel");
+		}
+		/* Cancel FineTuning Events for Job [WIP] */
+		public function finetune_events($fine_tune_id){
+			return $this->callAPI("fine-tunes/{$fine_tune_id}/events", false, 'GET');
+		}
+		/*
+			Delete a fine-tuned model. You must have the Owner role in your organization.
+			@para
+				$model	STRING	The model to delete
+
+			@response	ARRAY
+				id		STRING
+				object	STRING
+				deleted	BOOLEAN
+		*/
+		public function finetune_modelDel($model){
+			$results = $this->callAPI("models/{$model}", false, 'DELETE');
+			if(isset($results['deleted']) && $results['deleted']) return true;
+			else if(isset($results['error'])) return $results['error'];
+			else return $results;
+		}
+		
+		
 		
 		
 		
@@ -161,17 +344,17 @@
 
 
 		/****
-         Audio
-         ****/
-        /*
-        	@para
-        		$file	STRING	File path audio file (max of 25mb)
-        		$prompt	STRING	Helper text
-        		$model	STRING	Model you wanna use (whisper-1 is only available)
-        
-        	@return
-        		$text	STRING Transcript of audio file
-        */
+         	Audio
+         	****/
+		/*
+			@para
+				$file	STRING	File path audio file (max of 25mb)
+				$prompt	STRING	Helper text
+				$model	STRING	Model you wanna use (whisper-1 is only available)
+
+			@return
+				$text	STRING Transcript of audio file
+		*/
 		public function createTranscription($file, $prompt='', $model='whisper-1'){
 			$para = [];
 			if($prompt != '') $para['prompt'] = trim($prompt);
@@ -183,5 +366,4 @@
 			if($results && isset($results['text'])) return $results;
 			else return ['status'=>'error', 'msg'=>'Unable to process'];
 		}
-	}
 ?>
