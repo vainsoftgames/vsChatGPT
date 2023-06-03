@@ -6,6 +6,8 @@ ChatGPT in PHP
 Add vsChatGPT to your script
 ```
   define('API_KEY', 'YOUR OPENAI KEY');
+  define('OpenID_OrgID', 'YOUR OpenAI ORG ID');
+
   require('vsChatGPT.php');
 ```
 
