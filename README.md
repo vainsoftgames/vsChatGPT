@@ -49,4 +49,21 @@ To start using it:
   
   // See if you have access to multiple models
   $chatgpt->checkModels(['gpt-4','gpt-3.5-turbo']);
+  
+  
+  
+  // Finetuning
+  // Once training is complete(success), then you can plug in the model name into other functions to use that model
+  // Upload JSONL file for finetuning
+  $file = 'chatgpt.jsonl';
+  $chatgpt->file_upload($file);
+  
+  // Start Training
+  $fileID = 'ID returned from file_upload';
+  $model = 'What model do you want as your base';
+  $chatgpt->finetune_train($fileID, $model);
+  
+  // Check progress
+  $fine_tune_id = 'ID returned from finetune_train';
+  $chatgpt->finetune_events($fine_tune_id);
 ```
