@@ -1,7 +1,4 @@
 <?php
-  define('API_KEY', '');
-  define('OpenID_OrgID', '');
-
 	class vsChatGPT {
 		private $api_host = 'https://api.openai.com/v1/';
 		public $userID;
