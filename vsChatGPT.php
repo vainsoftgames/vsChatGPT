@@ -268,7 +268,31 @@
 			return $fnc;
 		}
 		
+				
+		/****
+		 Moderation
+		 ****/
+		public function moderation($prompt, $para=false, $model='text-moderation-latest'){
+            $para = ($para && is_array($para) ? $para : []);
+			$para['input'] = $prompt;
+			$para['model'] = $model;
+
+			return $this->callAPI('moderations', $para);
+		}
 		
+		
+		/****
+		 Completions
+		 ****/
+		public function completion($prompt, $para, $model='text-davinci-003'){
+            $para = ($para && is_array($para) ? $para : []);
+            $para['prompt'] = $prompt;
+            $para['model'] = $model;
+            $para['temperature'] = 0.2;
+            if($this->userID) $para['user'] = $this->userID;
+
+			return $this->callAPI('completions', $para);
+		}
 		
 		/****
 		 Files
