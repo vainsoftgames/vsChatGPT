@@ -114,18 +114,160 @@
 
 
 
-		public function chat($prompt, $msgs=false, $model='gpt-3.5-turbo'){
-      $msgs = (is_array($msgs) ? $msgs : []);
-      $msgs[] = ['role'=>'user', 'content'=>$prompt];
+		/****
+		 Chat
+		 ****/
+		/*
+		
+		
+		*/
+		public function createMSG($role, $text, ...$images){
+			return $this->createMSGFull($role, null, $text, null, ...$images);
+		}
+		public function createMSGFull($role='user', $name=null, $text, $detail='low', ...$images){
+			$msg = [];
+			$msg['role'] = $role;
+			if($name !== null && $name != '') $msg['name'] = $name;
+			
+			if(!empty($images)){
+				$msg['content'] = [];
+				if($text !== null && $text != '') $msg['content'][] = ['type'=>'text', 'text'=>$text];
+				$detail = $detail ?: 'low';
 
-      $para = [];
-      $para['model'] = $model;
-      $para['messages'] = $msgs;
-      $payload['temperature'] = 0.7;
-      if($this->userID) $payload['user'] = $this->userID;
+				foreach($images as $img){
+					if(file_exists($img) && is_file($img)){
+						$msg['content'][] = [
+							'type'		=>'image_url',
+							'image_url'	=> [
+								'url'		=> base64_encode(file_get_contents($img)),
+								'detail'	=> $detail
+							]
+						];
+					}
+					else if (filter_var($img, FILTER_VALIDATE_URL)) {
+						$msg['content'][] = [
+							'type'		=>'image_url',
+							'image_url'	=> [
+								'url'		=> $img,
+								'detail'	=> $detail
+							]
+						];
+					}
+					else $msg['content'][] = 'nope: '. $img;
+				}
+				return $msg;
+			}
+			else {
+				$msg['content'] = $text;
+			}
+			
+			return $msg;
+		}
+		/*
+			@para
+				$prompt			STRING	Message you wanna send to Chat API
+				$msgs			ARRAY	Array of previous system/assistant/user messages and now function msgs
+				$model			STRING	What model do you wanna use
+				$para			ARRAY	Any additional parameters you wanna define
+				$fncs			ARRAY	Defined functions you want Chat API to try to access in a response
+			@return
+				$response
+		*/
+		public function chat($prompt, $msgs=false, $model='gpt-3.5-turbo', $para=false, $fncs=false){
+			$msgs = (is_array($msgs) ? $msgs : []);
+			$msgs[] = ['role'=>'user', 'content'=>$prompt];
+	
+			// Call Chat NoP
+			return $this->chatNop($msgs, $model, $para, $fncs);
+		}
+		/*
+			Same as above, but without the prompt
+			I use this if I already have built up a $msgs and don't need a user prompt
+		*/
+		public function chatNop($msgs=false, $model='gpt-3.5-turbo', $para=false, $fncs=false){
+            		$para = (isset($para) && is_array($para) ? $para : []);
+            		$para['model'] = $model;
+		    	$para['messages'] = $msgs;
+		   	 if(!isset($para['temperature'])) $para['temperature'] = 0.7;
+	
+		    	// Check if user defined, userID
+		    	if($this->userID) $para['user'] = $this->userID;
+		    	if(!isset($para['max_tokens'])) $para['max_tokens'] = $this->max_tokens;
+		    
+		    
+		   	 if(!isset($para['functions'])){
+				// Check if user defined functions just for this instance
+				if($fncs && is_array($fncs)) $para['functions'] = $fncs;
+				// Check for global functions user wants to use everytime
+				else if($this->fncs) $para['functions'] = $this->fncs;
+		    	}
+		    	if(!isset($para['tools'])){
+				// Check for global functions user wants to use everytime
+				if($this->tools) $para['tools'] = $this->tools;
+			}
 
 			return $this->callAPI('chat/completions', $para);
 		}
+		
+		
+		/*
+			Create function for Chat API
+			
+			@para
+				$name		STRING			Name of the function, if OpenAI returns it, you can cross reference
+				$desc		STRING			Description of what the functions does
+				$props		ARRAY			All the paramters you want OpenAI to try to generate for your function
+				$required	STRING|ARRAY	What paramters are required to use your function
+				
+			@response		ARRAY
+		*/
+		public function createFNC($name, $desc, $props, $required=false){
+			$fnc = [];
+			$fnc['name'] = $name;
+			$fnc['description'] = $desc;
+			$fnc['parameters'] = [];
+			$fnc['parameters']['type'] = 'object';
+			$fnc['parameters']['properties'] = $props;
+		
+			if($required){
+				$fnc['parameters']['required'] = (is_array($required) ? $required : [$required]);
+			}
+
+			return $fnc;
+		}
+		private function createFNC_para($props, $required=false){
+			$payload = [];
+			$payload['type'] = 'object';
+			$payload['properties'] = $props;
+			if($required) $payload['required'] = (is_array($required) ? $required : [$required]);
+			
+			return $payload;
+		}
+		private function createFNC_response($desc=false, $props, $required=false){
+			$payload = [];
+			if($desc) $payload['description'] = $desc;
+			$payload['content'] = [
+				'application/json'	=> [
+					'schema'	=> $this->createFNC_para($props, $required)
+				]
+			];
+			
+			return $payload;
+		}
+		public function createFNC_body($name, $desc, $type, $props, $r_props, $required=false){
+			$fnc = [];
+			$fnc[$type] = [];
+			$fnc[$type]['operationId'] = $name;
+			$fnc[$type]['summary'] = $desc;
+			$fnc[$type]['requestBody'] = $this->createFNC_response(false, $props, $required);
+
+			$responses = [];
+			$responses[200] = $this->createFNC_response('Successful response', $r_props);
+			$fnc[$type]['responses'] = $responses;
+
+			return $fnc;
+		}
+		
 		
 		
 		/****
