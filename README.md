@@ -24,7 +24,15 @@ To start using it:
   $prompt = 'Message you wanna send to ChatGPT';
   $msgs = [];
   $msgs[] = ['role'=>'system','content'=>'You are an AI Assistant'];
+  or
+  $msgs[] = $chatgpt->createMSG('system', 'You are an AI Assistant');
   $chatgpt->chat($prompt, $msgs);
+
+  // GPT Vision
+  // Define Role, Text payload & images. Can be local image or remote images. Supports multiple images.
+  $msgs[] = $chatgpt->createMSG('user', 'What does this image contain?', 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg');
+
+  $msgs[] = $chatgpt->createMSG('user', 'What does this image contain?', 'my_image.jpg', 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg');
   
   
   // Create Image (Dall-E)
