@@ -104,13 +104,13 @@
 		// Corrects sentences into standard English
 		public function correctGrammer($text, $model='text-davinci-003'){
 			$para = [];
-      $para['model'] = $model;
-      $para['prompt'] = ('Correct this to standard English: '. $text);
-      $para['temperature'] = 0;
-      $para['top_p'] = 1.0;
-      $para['frequency_penalty'] = 0.0;
-      $para['presence_penalty'] = 0.0;
-      $para['max_tokens'] = 1000;
+			$para['model'] = $model;
+			$para['prompt'] = ('Correct this to standard English: '. $text);
+			$para['temperature'] = 0;
+			$para['top_p'] = 1.0;
+			$para['frequency_penalty'] = 0.0;
+			$para['presence_penalty'] = 0.0;
+			$para['max_tokens'] = 1000;
 
 			return $this->callAPI('completions', $para);
 		}
@@ -188,14 +188,14 @@
 			I use this if I already have built up a $msgs and don't need a user prompt
 		*/
 		public function chatNop($msgs=false, $model='gpt-3.5-turbo', $para=false, $fncs=false){
-            		$para = (isset($para) && is_array($para) ? $para : []);
-            		$para['model'] = $model;
-		    	$para['messages'] = $msgs;
+			$para = (isset($para) && is_array($para) ? $para : []);
+			$para['model'] = $model;
+			$para['messages'] = $msgs;
 		   	 if(!isset($para['temperature'])) $para['temperature'] = 0.7;
 	
-		    	// Check if user defined, userID
-		    	if($this->userID) $para['user'] = $this->userID;
-		    	if(!isset($para['max_tokens'])) $para['max_tokens'] = $this->max_tokens;
+			// Check if user defined, userID
+			if($this->userID) $para['user'] = $this->userID;
+			if(!isset($para['max_tokens'])) $para['max_tokens'] = $this->max_tokens;
 		    
 		    
 		   	 if(!isset($para['functions'])){
