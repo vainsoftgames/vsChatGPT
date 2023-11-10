@@ -24,7 +24,7 @@
 			if(array_key_exists('file', $payload)) $headers[] = 'Content-Type: multipart/form-data';
             else$headers[] = 'Content-Type: application/json';
             $headers[] = 'Authorization: Bearer '. API_KEY;
-            $headers[] = 'OpenAI-Organization: '. OpenID_OrgID; 
+            $headers[] = 'OpenAI-Organization: '. OpenAI_OrgID; 
 		
 			$ch = curl_init($this->api_host . $request);
             curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);

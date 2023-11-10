@@ -6,7 +6,7 @@ ChatGPT in PHP
 Add vsChatGPT to your script
 ```
   define('API_KEY', 'YOUR OPENAI KEY');
-  define('OpenID_OrgID', 'YOUR OpenAI ORG ID');
+  define('OpenAI_OrgID', 'YOUR OpenAI ORG ID');
 
   require('vsChatGPT.php');
 ```
@@ -28,13 +28,19 @@ To start using it:
   $msgs[] = $chatgpt->createMSG('system', 'You are an AI Assistant');
   $chatgpt->chat($prompt, $msgs);
 
+```
+
+GPT Vision
+```
   // GPT Vision
   // Define Role, Text payload & images. Can be local image or remote images. Supports multiple images.
   $msgs[] = $chatgpt->createMSG('user', 'What does this image contain?', 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg');
 
   $msgs[] = $chatgpt->createMSG('user', 'What does this image contain?', 'my_image.jpg', 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg');
-  
-  
+```  
+
+
+```
   // Create Image (Dall-E)
   $prompt = 'Prompt you want to generate image with';
   $size = 256x256, 512x512 or 1024x1024
@@ -57,9 +63,10 @@ To start using it:
   
   // See if you have access to multiple models
   $chatgpt->checkModels(['gpt-4','gpt-3.5-turbo']);
-  
-  
-  
+
+```
+
+```
   // Finetuning
   // Once training is complete(success), then you can plug in the model name into other functions to use that model
   // Upload JSONL file for finetuning
