@@ -3,6 +3,9 @@
 		private $api_host = 'https://api.openai.com/v1/';
 		public $userID;
 		public $timeout = 120;
+		public $fncs;
+		public $tools;
+		public $max_tokens = 1024;
 
 		public function __construct(){
 		}
@@ -533,4 +536,5 @@
 			if($results && isset($results['text'])) return $results;
 			else return ['status'=>'error', 'msg'=>'Unable to process'];
 		}
+	}
 ?>
