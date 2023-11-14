@@ -25,12 +25,27 @@
             else$headers[] = 'Content-Type: application/json';
             $headers[] = 'Authorization: Bearer '. API_KEY;
             $headers[] = 'OpenAI-Organization: '. OpenAI_OrgID; 
+
+			$r_headers = [];
 		
 			$ch = curl_init($this->api_host . $request);
             curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
             curl_setopt($ch, CURLOPT_HEADER, 0);
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+			curl_setopt($ch, CURLOPT_ENCODING, 'gzip');
+			curl_setopt($ch, CURLOPT_HEADERFUNCTION,
+				function($curl, $header) use (&$r_headers) {
+					$len = strlen($header);
+					$header = explode(':', $header, 2);
+					if (count($header) < 2) // ignore invalid headers
+						return $len;
+
+					$r_headers[strtolower(trim($header[0]))][] = trim($header[1]);
+
+					return $len;
+				}
+			);
 
 			if($payload){
 				if(array_key_exists('file', $payload)) curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
@@ -45,7 +60,11 @@
 			}
 			curl_close($ch);
 
-			return json_decode($response, true);
+			$json = json_decode($response, true);
+			if($json && is_array($json)){
+				$json['headers'] = $r_headers;
+			}
+			return $json;
 		}
 		/*
 			Get list of models available to account
@@ -116,6 +135,32 @@
 		}
 
 
+		public function fnc($function_call, &$response, &$msgs, $isTool=false){
+			error_log("fnc: ". json_encode($function_call));
+			$function = $function_call['function'];
+			$arg = @json_decode($function['arguments'], true);
+			$fnc_results = false;
+			if(function_exists($function['name'])){
+				$response['args'][] = ['name'=>$function['name'], 'arg'=>$arg];
+				$fnc_results = $function['name'](null, $arg);
+			}
+			else $response['bad_fnc'][] = $function['name'];
+
+			$msg = [];
+			$msg['name'] = $function['name'];
+			if($isTool){
+				$msg['role'] = 'function';
+				$msg['tool_call_id'] = $function_call['id'];
+			}
+			else $msg['role'] = 'function';
+
+			if($fnc_results){
+				$msg['content'] = json_encode($fnc_results['payload']);
+			}
+			else $msg['content'] = 'Unable to find function';
+			
+			$msgs[] = $msg;
+		}
 
 		/****
 		 Chat
@@ -124,6 +169,21 @@
 		
 		
 		*/
+		public function createEProp() : array {
+			return $this->createProp('');
+		}
+		public function createEProps() : array {
+			$props = [];
+			$props['placeholder'] = $this->createEProp();
+			return $props;
+		}
+		public function createProp($desc, $type='string', $emu=null){
+			$payload = [];
+			$payload['type'] = $type;
+			$payload['description'] = $desc;
+
+			return $payload;
+		}
 		public function createMSG($role, $text, ...$images){
 			return $this->createMSGFull($role, null, $text, null, ...$images);
 		}
@@ -131,7 +191,7 @@
 			$msg = [];
 			$msg['role'] = $role;
 			if($name !== null && $name != '') $msg['name'] = $name;
-			
+
 			if(!empty($images)){
 				$msg['content'] = [];
 				if($text !== null && $text != '') $msg['content'][] = ['type'=>'text', 'text'=>$text];
@@ -139,10 +199,19 @@
 
 				foreach($images as $img){
 					if(file_exists($img) && is_file($img)){
+						$fileExt = strtolower(pathinfo($img, PATHINFO_EXTENSION));
+						if($fileExt == 'jpg' || $fileExt == 'jpeg') $base64Pre = 'data:image/jpeg;base64,';
+						else if($fileExt == 'png') $base64Pre = 'data:image/png;base64,';
+						else if($fileExt == 'gif') $base64Pre = 'data:image/gif;base64,';
+						// Unsupported Image Type
+						else {
+							continue;
+						}
+						
 						$msg['content'][] = [
 							'type'		=>'image_url',
 							'image_url'	=> [
-								'url'		=> base64_encode(file_get_contents($img)),
+								'url'		=> ($base64Pre . base64_encode(file_get_contents($img))),
 								'detail'	=> $detail
 							]
 						];
@@ -156,7 +225,8 @@
 							]
 						];
 					}
-					else $msg['content'][] = 'nope: '. $img;
+					else continue;
+					//$msg['content'][] = 'nope: '. $img;
 				}
 				return $msg;
 			}
@@ -203,8 +273,8 @@
 				if($fncs && is_array($fncs)) $para['functions'] = $fncs;
 				// Check for global functions user wants to use everytime
 				else if($this->fncs) $para['functions'] = $this->fncs;
-		    	}
-		    	if(!isset($para['tools'])){
+			}
+			if(!isset($para['tools'])){
 				// Check for global functions user wants to use everytime
 				if($this->tools) $para['tools'] = $this->tools;
 			}
@@ -224,6 +294,13 @@
 				
 			@response		ARRAY
 		*/
+		public function createTool($name, $desc, $props=[], $required=false){
+			$tool = [];
+			$tool['type'] = 'function';
+			$tool['function'] = $this->createFNC($name, $desc, $props, $required);
+			
+			return $tool;
+		}
 		public function createFNC($name, $desc, $props, $required=false){
 			$fnc = [];
 			$fnc['name'] = $name;
@@ -536,5 +613,53 @@
 			if($results && isset($results['text'])) return $results;
 			else return ['status'=>'error', 'msg'=>'Unable to process'];
 		}
+		
+		/*
+			Text to Speech
+		*/
+		public function createSpeech($prompt, string $voice='alloy', string $model='tls-1', string $format='mp3', float $speed=1.0){
+			$speed = max(0.25, min($speed, 4));
+
+			$para = [];
+			$para['input'] = $prompt;
+			$para['voice'] = $voice;
+			$para['model'] = $model;
+			$para['return_format'] = $format;
+			$para['speed'] = $speed;
+			$para['raw'] = true;
+
+			return $this->callAPI('audio/speech', $para);
+		}
+
+
+
+		/*
+			Token Estimator
+        	@para
+        		$text	STRING	Input text
+
+        	@return
+        		$count	INT		Estimate of payload tokens
+		*/
+		private function estTokenARR($arr){
+			$text = '';
+			foreach($arr as $k=>$v){
+				$text .= $v['role'] .' => '.$v['content'] ."\n";
+			}
+			
+			return $text;
+		}
+		public function estTokens($text) {
+			if(is_array($text)) $text = $this->estTokenARR($text);
+			// Remove leading/trailing white spaces
+			$text = trim($text);
+
+			// Split the text into words
+			$words = str_word_count($text, 1);
+
+			// Estimate token count based on words and punctuation
+			$punctuationTokens = preg_match_all("/[^\s\w]/u", $text, $matches);
+			return count($words) + $punctuationTokens;
+        }
 	}
 ?>
