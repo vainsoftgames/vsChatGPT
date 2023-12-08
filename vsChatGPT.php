@@ -1,13 +1,22 @@
 <?php
 	class vsChatGPT {
-		private $api_host = 'https://api.openai.com/v1/';
+		public $api_host = 'https://api.openai.com/v1/';
 		public $userID;
 		public $timeout = 120;
 		public $fncs;
 		public $tools;
 		public $max_tokens = 1024;
+		
+		public $db;
+		public $log = false;
+		public $log_type = 'sys';
+		public $log_fnc = null;
 
 		public function __construct(){
+			if(!function_exists('curl_init')){
+				throw new Exception('cURL isn\'t installed.');
+				return false;
+			}
 		}
 
 		/*
@@ -136,7 +145,7 @@
 
 
 		public function fnc($function_call, &$response, &$msgs, $isTool=false){
-			error_log("fnc: ". json_encode($function_call));
+			if($this->log_type == 'sys') error_log(__METHOD__ . ": " . json_encode($function_call));
 			$function = $function_call['function'];
 			$arg = @json_decode($function['arguments'], true);
 			$fnc_results = false;
@@ -161,6 +170,97 @@
 			
 			$msgs[] = $msg;
 		}
+		public function processPayload($msgs, $model=false, &$response){
+			if(!$model) $model = 'gpt-3.5-turbo-16k';
+			if(!isset($response['tries'])) $response['tries'] = 0;
+
+			// Track Start Time
+			$response['time']['start'] = time();
+			$results = $this->chatNop($msgs, $model);
+
+			// Track End Time
+			$response['time']['end'] = time();
+
+			// Track how long ChatGPT took to respond
+			$response['time']['dur'] = abs($response['time']['start'] - $response['time']['end']);
+
+			if(isset($results['id'])){
+				$response['id'] = $results['id'];
+				$response['tokens'] = $results['usage'];
+
+				if($this->log){
+					if($this->log_fnc){
+						call_user_func(
+							$this->log_fnc,
+							(isset($task['userID']) ? $task['userID'] : 0),
+							$results['usage'],
+							(isset($response['type']) ? $response['type'] : false),
+							$results['model']
+						);
+					}
+				}
+
+				if(isset($results) && isset($results['choices']) && count($results['choices']) > 0){
+					$choice = $results['choices'][0]['message'];
+
+					if(isset($choice['tool_calls']) && count($choice['tool_calls']) > 0){
+						foreach($choice['tool_calls'] as $tool){
+							$this->fnc($tool, $response, true);
+						}
+
+						return $this->processPayload($msgs, $model, $response);
+					}
+					else if(isset($choice['function_call'])){
+						$this->fnc($choice['function_call'], $response, $msgs);
+
+						return $this->processPayload($msgs, $model, $response);
+					}
+					else {
+						$response['payload'] = trim($choice['content']);
+						$response['status'] = 'success';
+						$response['model'] = $results['model'];
+
+						if(isset($response['decode'])){
+							$response['payload_decode'] = substr($response['payload'], strpos($response['payload'], '{'));
+							$response['payload_decode'] = substr($response['payload_decode'], 0, strrpos($response['payload_decode'], '}')+1);
+							$response['payload_decode'] = json_decode($response['payload_decode'], true);
+						}
+					}
+
+					return true;
+				}
+				else {
+					$response['status'] = 'error';
+					$response['msg'] = 'No choices returned';
+					$response['openai'] = $results;
+				}
+			}
+			else if(isset($results['error'])){
+				// If server error, usually when overloaded. Try again in a second
+				if($results['error']['type'] == 'server_error' && $response['tries'] < 3){
+					$response['tries']++;
+					sleep(2);
+					return $this->processPayload($msgs, $model, $response);
+				}
+				// If prompt exceeds GPT-3.5, upgrade to GPT-4
+				else if($results['error']['code'] == 'context_length_exceeded' && strpos($model, 'gpt-3.5-turbo-16k') === false){
+	//                                 $task['para']['upgraded'] = true;
+					return $this->processPayload($msgs, 'gpt-3.5-turbo-16k', $response);
+				}
+				else {
+					$response['status'] = 'error';
+					$response['msg'] = 'Error generating from ChatGPT';
+					$response['openai'] = $results;
+				}
+			}
+			else {
+				$response['status'] = 'error';
+				$response['msg'] = 'Error generating from ChatGPT';
+				$response['openai'] = $results;
+			}
+
+			return false;
+		}
 
 		/****
 		 Chat
@@ -180,7 +280,7 @@
 		public function createProp($desc, $type='string', $emu=null){
 			$payload = [];
 			$payload['type'] = $type;
-			$payload['description'] = $desc;
+			$payload['description'] = trim(str_replace("\r\n", '', $desc));
 
 			return $payload;
 		}
@@ -203,6 +303,7 @@
 						if($fileExt == 'jpg' || $fileExt == 'jpeg') $base64Pre = 'data:image/jpeg;base64,';
 						else if($fileExt == 'png') $base64Pre = 'data:image/png;base64,';
 						else if($fileExt == 'gif') $base64Pre = 'data:image/gif;base64,';
+						else if($fileExt == 'webp') $base64Pre = 'data:image/webp;base64,';
 						// Unsupported Image Type
 						else {
 							continue;
@@ -216,7 +317,7 @@
 							]
 						];
 					}
-					else if (filter_var($img, FILTER_VALIDATE_URL)) {
+					else if (filter_var($img, FILTER_VALIDATE_URL) || strpos($img, 'http://') !== false || strpos($img, 'https://') !== false) {
 						$msg['content'][] = [
 							'type'		=>'image_url',
 							'image_url'	=> [
@@ -226,7 +327,6 @@
 						];
 					}
 					else continue;
-					//$msg['content'][] = 'nope: '. $img;
 				}
 				return $msg;
 			}
@@ -576,7 +676,21 @@
 			@return
 				$payload
 		 */
-		public function createIMG($prompt, $size='256x256', $num=1, $format='url'){
+		public function createIMG($prompt, $size='256x256', $num=1, $format='url', $model='dall-e-3'){
+			if($this->log_type == 'sys') error_log(__METHOD__ . ": " . json_encode(['promot'=>$prompt, 'size'=>$size, 'num'=>$num, 'format'=>$format, 'model'=>$model]));
+
+			$size = (is_numeric($size) ? ($size .'x'. $size) : $size);
+			if($model == 'dall-e-3') $sizes = ['256x256','512x512','1024x1024'];
+			else if($model == 'dall-e-2') $sizes = ['1024x1024','1792x1024','1024x1792'];
+			else {
+				return ['status'=>'error', 'msg'=>'Unsupported model'];
+			}
+
+			if(!in_array($size, $sizes)){
+				$size = $sizes[0];
+			}
+			
+			
 			$para = [];
 			$para['prompt'] = $prompt;
 			$para['size'] = (is_numeric($size) ? ($size .'x'. $size) : $size);
@@ -585,7 +699,7 @@
 			if($this->userID) $para['user'] = $userID;
 
 			$results = $this->callAPI("images/generations", $para);
-			if($results && count($results['data']) > 0) return $results['data'];
+			if($results && isset($results['data']) && count($results['data']) > 0) return $results['data'];
 			else return ['status'=>'error', 'msg'=>'Unable to generate image'];
 		}
 
@@ -602,12 +716,13 @@
 			@return
 				$text	STRING Transcript of audio file
 		*/
-		public function createTranscription($file, $prompt='', $model='whisper-1'){
+		public function createTranscription($file, $prompt='', $model='whisper-1', $lang='en'){
 			$para = [];
 			if($prompt != '') $para['prompt'] = trim($prompt);
 			$para['model'] = $model;
 			$para['response_format'] = 'json';
-			$para['file'] = curl_file_create($file, 'audio.mp3');
+			$para['language'] = $lang;
+			$para['file'] = curl_file_create($file, ('audio.'. pathinfo($file, PATHINFO_EXTENSION)));
 			
 			$results = $this->callAPI('audio/transcriptions', $para);
 			if($results && isset($results['text'])) return $results;
