@@ -151,7 +151,7 @@
 			$fnc_results = false;
 			if(function_exists($function['name'])){
 				$response['args'][] = ['name'=>$function['name'], 'arg'=>$arg];
-				$fnc_results = $function['name'](null, $arg);
+				$fnc_results = $function['name']($this, $arg);
 			}
 			else $response['bad_fnc'][] = $function['name'];
 
