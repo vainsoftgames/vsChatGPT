@@ -1,9 +1,11 @@
 # vsChatGPT
 ChatGPT in PHP
+This is an “unofficial" OpenAI library that I maintain.
 
 
 
 Add vsChatGPT to your script
+<br>You should pull your API Keys from environment variables, not hard cold them into your PHP files.
 ```
   define('API_KEY', 'YOUR OPENAI KEY');
   define('OpenAI_OrgID', 'YOUR OpenAI ORG ID');
