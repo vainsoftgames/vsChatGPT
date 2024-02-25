@@ -205,7 +205,7 @@
 
 					if(isset($choice['tool_calls']) && count($choice['tool_calls']) > 0){
 						foreach($choice['tool_calls'] as $tool){
-							$this->fnc($tool, $response, true);
+							$this->fnc($tool, $response, $msgs, true);
 						}
 
 						return $this->processPayload($msgs, $model, $response);
