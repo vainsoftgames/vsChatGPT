@@ -11,11 +11,64 @@
 		public $log = false;
 		public $log_type = 'sys';
 		public $log_fnc = null;
+		public $whisper = 'whisper';
+
+		public $threadID = false;
+		public $threadDir;
+		public $thread;
 
 		public function __construct(){
 			if(!function_exists('curl_init')){
 				throw new Exception('cURL isn\'t installed.');
 				return false;
+			}
+		}
+
+
+		/*
+			Thread Management
+		*/
+		
+		/*
+			@para
+				$threadID	STRING | INT16
+				
+			@return
+				$threadExists	BOOLEAN
+		*/
+		public function setThreadID($threadID=false){
+			if(!$threadID) $threadID = uniqid('', true);
+
+			$this->threadID = $threadID;
+			if(!$this->threadDir) $this->threadDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR;
+			
+			$thread_path = $this->threadPath($threadID);
+			if(file_exists($thread_path)){
+				$this->thread = @json_decode(file_get_contents($thread_path), true);
+				return ($this->thread);
+			}
+			else $this->thread = [];
+
+			return false;
+		}
+		private function threadPath($threadID){
+			return ($this->threadDir . 'thread_'. $threadID .'.json');
+		}
+
+		private function saveThread() {
+			if(!$this->threadID) return false;
+
+			$thread_path = $this->threadPath($this->threadID);
+			$payload = json_encode($this->thread, JSON_PRETTY_PRINT);
+
+			file_put_contents($thread_path, $payload);
+
+			unset($payload);
+		}
+		private function addThreadMSG($msg){
+			if($this->threadID && is_array($this->thread)){
+				$this->thread[] = $msg;
+				$this->saveThread();
 			}
 		}
 
@@ -68,6 +121,9 @@
 				$response = json_encode(['status'=>'error', 'msg'=>'timeout', 'full_msg'=>curl_error($ch)]);
 			}
 			curl_close($ch);
+
+			// Some responses aren't json encoded like audio
+			if(isset($payload) && array_key_exists('raw', $payload)) return $response;
 
 			$json = json_decode($response, true);
 			if($json && is_array($json)){
@@ -146,7 +202,11 @@
 
 		public function fnc($function_call, &$response, &$msgs, $isTool=false){
 			if($this->log_type == 'sys') error_log(__METHOD__ . ": " . json_encode($function_call));
-			$function = $function_call['function'];
+
+			// Tools have sub-parameter for function details
+			if($isTool) $function = $function_call['function'];
+			else $function = $function_call;
+
 			$arg = @json_decode($function['arguments'], true);
 			$fnc_results = false;
 			if(function_exists($function['name'])){
@@ -170,19 +230,23 @@
 			
 			$msgs[] = $msg;
 		}
-		public function processPayload($msgs, $model=false, &$response){
+		public function processPayload($msgs, $model=false, &$response, $para=false){
 			if(!$model) $model = 'gpt-3.5-turbo-16k';
 			if(!isset($response['tries'])) $response['tries'] = 0;
 
 			// Track Start Time
 			$response['time']['start'] = time();
-			$results = $this->chatNop($msgs, $model);
+			$results = $this->chatNop($msgs, $model, $para);
 
 			// Track End Time
 			$response['time']['end'] = time();
 
 			// Track how long ChatGPT took to respond
 			$response['time']['dur'] = abs($response['time']['start'] - $response['time']['end']);
+			if($this->threadID) {
+				$response['threadID'] = $this->threadID;
+				$this->thread = $msgs;
+			}
 
 			if(isset($results['id'])){
 				$response['id'] = $results['id'];
@@ -208,22 +272,33 @@
 							$this->fnc($tool, $response, $msgs, true);
 						}
 
-						return $this->processPayload($msgs, $model, $response);
+						return $this->processPayload($msgs, $model, $response, $para);
 					}
 					else if(isset($choice['function_call'])){
 						$this->fnc($choice['function_call'], $response, $msgs);
 
-						return $this->processPayload($msgs, $model, $response);
+						return $this->processPayload($msgs, $model, $response, $para);
 					}
 					else {
 						$response['payload'] = trim($choice['content']);
 						$response['status'] = 'success';
 						$response['model'] = $results['model'];
 
+						if($this->threadID){
+							$this->addThreadMSG($this->createMSGFull('assistant', 'ChatGPT', $response['payload']));
+						}
+
 						if(isset($response['decode'])){
-							$response['payload_decode'] = substr($response['payload'], strpos($response['payload'], '{'));
-							$response['payload_decode'] = substr($response['payload_decode'], 0, strrpos($response['payload_decode'], '}')+1);
-							$response['payload_decode'] = json_decode($response['payload_decode'], true);
+							$response['payload_decode'] = preg_replace('/\/\/.*$/m', '', $response['payload']);
+							$response['payload_decode'] = str_replace("\r\n", '', $response['payload_decode']);
+
+							$json = @json_decode($response['payload_decode'], true);
+							if(json_last_error() === JSON_ERROR_NONE && is_array($json)) $response['payload_decode'] = $json;
+							else {
+								$response['payload_decode'] = substr($response['payload_decode'], strpos($response['payload_decode'], '{'));
+								$response['payload_decode'] = substr($response['payload_decode'], 0, strrpos($response['payload_decode'], '}')+1);
+								$response['payload_decode'] = json_decode($response['payload_decode'], true);
+							}
 						}
 					}
 
@@ -240,12 +315,12 @@
 				if($results['error']['type'] == 'server_error' && $response['tries'] < 3){
 					$response['tries']++;
 					sleep(2);
-					return $this->processPayload($msgs, $model, $response);
+					return $this->processPayload($msgs, $model, $response, $para);
 				}
 				// If prompt exceeds GPT-3.5, upgrade to GPT-4
 				else if($results['error']['code'] == 'context_length_exceeded' && strpos($model, 'gpt-3.5-turbo-16k') === false){
 	//                                 $task['para']['upgraded'] = true;
-					return $this->processPayload($msgs, 'gpt-3.5-turbo-16k', $response);
+					return $this->processPayload($msgs, 'gpt-3.5-turbo-16k', $response, $para);
 				}
 				else {
 					$response['status'] = 'error';
@@ -365,19 +440,21 @@
 	
 			// Check if user defined, userID
 			if($this->userID) $para['user'] = $this->userID;
-			if(!isset($para['max_tokens'])) $para['max_tokens'] = $this->max_tokens;
+            		if(!isset($para['max_tokens']) && $this->max_tokens > 0) $para['max_tokens'] = $this->max_tokens;
 		    
 		    
-		   	 if(!isset($para['functions'])){
-				// Check if user defined functions just for this instance
-				if($fncs && is_array($fncs)) $para['functions'] = $fncs;
-				// Check for global functions user wants to use everytime
-				else if($this->fncs) $para['functions'] = $this->fncs;
-			}
 			if(!isset($para['tools'])){
-				// Check for global functions user wants to use everytime
-				if($this->tools) $para['tools'] = $this->tools;
-			}
+		            	// Check for global functions user wants to use everytime
+		            	if($this->tools) $para['tools'] = $this->tools;
+		
+		//             	if(isset($para['tools'])) $para['tool_call'] = 'auto';
+					}
+		            else if(!isset($para['functions'])){
+		            	// Check if user defined functions just for this instance
+		            	if($fncs && is_array($fncs)) $para['functions'] = $fncs;
+		            	// Check for global functions user wants to use everytime
+		            	else if($this->fncs) $para['functions'] = $this->fncs;
+		            }
 
 			return $this->callAPI('chat/completions', $para);
 		}
@@ -676,12 +753,12 @@
 			@return
 				$payload
 		 */
-		public function createIMG($prompt, $size='256x256', $num=1, $format='url', $model='dall-e-3'){
+		public function createIMG($prompt, $size='256x256', $num=1, $format='url', $model='dall-e-3', $quality='standard', $style='vivid'){
 			if($this->log_type == 'sys') error_log(__METHOD__ . ": " . json_encode(['promot'=>$prompt, 'size'=>$size, 'num'=>$num, 'format'=>$format, 'model'=>$model]));
 
 			$size = (is_numeric($size) ? ($size .'x'. $size) : $size);
-			if($model == 'dall-e-3') $sizes = ['256x256','512x512','1024x1024'];
-			else if($model == 'dall-e-2') $sizes = ['1024x1024','1792x1024','1024x1792'];
+			if($model == 'dall-e-3') $sizes = ['1024x1024','1792x1024','1024x1792'];
+			else if($model == 'dall-e-2') $sizes = ['256x256','512x512','1024x1024'];
 			else {
 				return ['status'=>'error', 'msg'=>'Unsupported model'];
 			}
@@ -696,6 +773,8 @@
 			$para['size'] = (is_numeric($size) ? ($size .'x'. $size) : $size);
 			$para['response_format'] = $format;
 			$para['n'] = MIN($num, 10);
+			$para['quality'] = $quality;
+			$para['style'] = $style;
 			if($this->userID) $para['user'] = $userID;
 
 			$results = $this->callAPI("images/generations", $para);
@@ -717,22 +796,52 @@
 				$text	STRING Transcript of audio file
 		*/
 		public function createTranscription($file, $prompt='', $model='whisper-1', $lang='en'){
+			$isWhisperInstalled = $this->isProgramInstalled('whisper');
 			$para = [];
 			if($prompt != '') $para['prompt'] = trim($prompt);
 			$para['model'] = $model;
 			$para['response_format'] = 'json';
 			$para['language'] = $lang;
-			$para['file'] = curl_file_create($file, ('audio.'. pathinfo($file, PATHINFO_EXTENSION)));
-			
+
+			if (($method === 'auto' && $isWhisperInstalled) || $method === 'local') {
+				if ($isWhisperInstalled) {
+					// Construct command for local execution
+					$command = "whisper";
+					foreach ($para as $key => $value) {
+						$command .= " --" . escapeshellarg($key) . " " . escapeshellarg($value);
+					}
+					$command .= " " . escapeshellarg($file);
+
+					// Execute the command
+					$output = [];
+					exec($command, $output, $returnVar);
+					if ($returnVar === 0) {
+						return ['status' => 'success', 'text' => implode("\n", $output)];
+					}
+					else {
+						return ['status' => 'error', 'msg' => 'Local execution of whisper failed'];
+					}
+				}
+			}
+
+			// Default to original API logic if whisper is not installed or method is not local
+			$para['file'] = curl_file_create($file, ('audio.' . pathinfo($file, PATHINFO_EXTENSION)));
 			$results = $this->callAPI('audio/transcriptions', $para);
-			if($results && isset($results['text'])) return $results;
-			else return ['status'=>'error', 'msg'=>'Unable to process'];
+			if ($results && isset($results['text'])) return $results;
+			else return ['status' => 'error', 'msg' => 'Unable to process'];
+		}
+
+		private function isProgramInstalled($program) {
+			$output = [];
+			$returnVar = 0;
+			exec("which $program", $output, $returnVar);
+			return $returnVar === 0;
 		}
 		
 		/*
 			Text to Speech
 		*/
-		public function createSpeech($prompt, string $voice='alloy', string $model='tls-1', string $format='mp3', float $speed=1.0){
+		public function createSpeech($prompt, string $voice='alloy', string $model='tts-1', string $format='mp3', float $speed=1.0){
 			$speed = max(0.25, min($speed, 4));
 
 			$para = [];
