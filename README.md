@@ -6,7 +6,7 @@ This is an “unofficial" OpenAI library that I maintain.
 
 Add vsChatGPT to your script
 <br>You should pull your API Keys from environment variables, not hard cold them into your PHP files.
-```
+```php
   define('API_KEY', 'YOUR OPENAI KEY');
   define('OpenAI_OrgID', 'YOUR OpenAI ORG ID');
 
@@ -15,7 +15,7 @@ Add vsChatGPT to your script
 
 
 To start using it:
-```
+```php
   $chatgpt = new vsChatGPT();
   $chatgpt->userID = 'Set UserID if you want OpenID to monitor abuse';
   
@@ -33,7 +33,7 @@ To start using it:
 ```
 
 GPT Vision
-```
+```php
   // GPT Vision
   // Define Role, Text payload & images. Can be local image or remote images. Supports multiple images.
   $msgs[] = $chatgpt->createMSG('user', 'What does this image contain?', 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg');
@@ -42,7 +42,7 @@ GPT Vision
 ```  
 
 
-```
+```php
   // Create Image (Dall-E)
   $prompt = 'Prompt you want to generate image with';
   $size = 256x256, 512x512 or 1024x1024
@@ -68,7 +68,7 @@ GPT Vision
 
 ```
 
-```
+```php
   // Finetuning
   // Once training is complete(success), then you can plug in the model name into other functions to use that model
   // Upload JSONL file for finetuning
@@ -83,4 +83,10 @@ GPT Vision
   // Check progress
   $fine_tune_id = 'ID returned from finetune_train';
   $chatgpt->finetune_events($fine_tune_id);
+```
+
+## Create Speech
+```php
+  $prompt = 'Hello there, how can I assit you today?';
+  $audio = $chatgpt->createSpeech($prompt, 'alloy', 'tts-1', 'mp3');
 ```
