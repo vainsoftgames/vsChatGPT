@@ -83,18 +83,18 @@
 		*/
 		private function callAPI($request, $payload=false, $method='POST'){
 			$headers = [];
-			if(array_key_exists('file', $payload)) $headers[] = 'Content-Type: multipart/form-data';
-            else$headers[] = 'Content-Type: application/json';
-            $headers[] = 'Authorization: Bearer '. API_KEY;
-            $headers[] = 'OpenAI-Organization: '. OpenAI_OrgID; 
+			if($payload && is_array($payload) && array_key_exists('file', $payload)) $headers[] = 'Content-Type: multipart/form-data';
+            		else $headers[] = 'Content-Type: application/json';
+            		$headers[] = 'Authorization: Bearer '. API_KEY;
+            		$headers[] = 'OpenAI-Organization: '. OpenAI_OrgID; 
 
 			$r_headers = [];
 		
 			$ch = curl_init($this->api_host . $request);
-            curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
-            curl_setopt($ch, CURLOPT_HEADER, 0);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+			curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
+			curl_setopt($ch, CURLOPT_HEADER, 0);
+			curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
 			curl_setopt($ch, CURLOPT_ENCODING, 'gzip');
 			curl_setopt($ch, CURLOPT_HEADERFUNCTION,
 				function($curl, $header) use (&$r_headers) {
@@ -200,34 +200,39 @@
 		}
 
 
-		public function fnc($function_call, &$response, &$msgs, $isTool=false){
-			if($this->log_type == 'sys') error_log(__METHOD__ . ": " . json_encode($function_call));
+		public function fnc($function_call, &$response, &$msgs, $isTool = false) {
+			if ($this->log_type == 'sys') {
+				error_log(__METHOD__ . ": " . json_encode($function_call));
+			}
 
-			// Tools have sub-parameter for function details
-			if($isTool) $function = $function_call['function'];
-			else $function = $function_call;
-
+			$function = $function_call['function'];
 			$arg = @json_decode($function['arguments'], true);
 			$fnc_results = false;
-			if(function_exists($function['name'])){
-				$response['args'][] = ['name'=>$function['name'], 'arg'=>$arg];
+
+			if (function_exists($function['name'])) {
+				$response['args'][] = ['name' => $function['name'], 'arg' => $arg];
 				$fnc_results = $function['name']($this, $arg);
 			}
-			else $response['bad_fnc'][] = $function['name'];
-
-			$msg = [];
-			$msg['name'] = $function['name'];
-			if($isTool){
-				$msg['role'] = 'function';
-				$msg['tool_call_id'] = $function_call['id'];
+			else {
+				$response['bad_fnc'][] = $function['name'];
 			}
-			else $msg['role'] = 'function';
 
-			if($fnc_results){
+			// OpenAI expects 'assistant' role with 'function_call' content for function calls
+			$msg = [
+				'role' => 'assistant',
+				'function_call' => [
+					'name' => $function['name'],
+					'arguments' => json_encode($arg),
+				],
+			];
+
+			if ($fnc_results) {
 				$msg['content'] = json_encode($fnc_results['payload']);
 			}
-			else $msg['content'] = 'Unable to find function';
-			
+			else {
+				$msg['content'] = 'Unable to find function';
+			}
+
 			$msgs[] = $msg;
 		}
 		public function processPayload($msgs, $model=false, &$response, $para=false){
