@@ -71,7 +71,26 @@
 				$this->saveThread();
 			}
 		}
+		public function setThreadOffset($offset){
+			$this->threadOffset = $offset;
+		}
 
+		
+		private function adjustPayloadForModel(&$payload){
+			if($payload && is_array($payload)){
+				$model = $payload['model'] ?? false;
+				if(strpos($model, 'o1') !== false || strpos($model, 'o3') !== false){
+					// o1 uses max_completion_tokens instead of max_tokens
+					if(array_key_exists('max_tokens', $payload)){
+						$payload['max_completion_tokens'] = $payload['max_tokens'];
+						unset($payload['max_tokens']);
+					}
+					
+					// o1 doesnt support temp
+					if(array_key_exists('temperature', $payload)) unset($payload['temperature']);
+				}
+			}
+		}
 		/*
 			@para
 				$request	STRING
@@ -87,6 +106,8 @@
             		else $headers[] = 'Content-Type: application/json';
             		$headers[] = 'Authorization: Bearer '. API_KEY;
             		$headers[] = 'OpenAI-Organization: '. OpenAI_OrgID; 
+			// Clean up payloads
+			$this->adjustPayloadForModel($payload);
 
 			$r_headers = [];
 		
@@ -250,7 +271,7 @@
 			$response['time']['dur'] = abs($response['time']['start'] - $response['time']['end']);
 			if($this->threadID) {
 				$response['threadID'] = $this->threadID;
-				$this->thread = $msgs;
+				$this->thread = array_slice($msgs, $this->threadOffset);
 			}
 
 			if(isset($results['id'])){
@@ -703,23 +724,23 @@
 			if($model) $para['model'] = $model;
 			$para['training_file'] = $fileID;
 
-			return $this->callAPI("fine-tunes", $para);
+			return $this->callAPI("fine_tuning/jobs", $para);
 		}
 		/* Get FineTuning Jobs List [WIP] */
 		public function finetune_list(){
-			return $this->callAPI('fine-tunes', false, 'GET');
+			return $this->callAPI('fine_tuning/jobs', false, 'GET');
 		}
 		/* Get FineTuning Job File [WIP] */
 		public function finetune_file($fine_tune_id){
-			return $this->callAPI("fine-tunes/{$fine_tune_id}", false, 'GET');
+			return $this->callAPI("fine_tuning/jobs/{$fine_tune_id}", false, 'GET');
 		}
 		/* Cancel FineTuning Job [WIP] */
 		public function finetune_cancel($fine_tune_id){
-			return $this->callAPI("fine-tunes/{$fine_tune_id}/cancel");
+			return $this->callAPI("fine_tuning/jobs/{$fine_tune_id}/cancel");
 		}
 		/* Cancel FineTuning Events for Job [WIP] */
 		public function finetune_events($fine_tune_id){
-			return $this->callAPI("fine-tunes/{$fine_tune_id}/events", false, 'GET');
+			return $this->callAPI("fine_tuning/jobs/{$fine_tune_id}/events", false, 'GET');
 		}
 		/*
 			Delete a fine-tuned model. You must have the Owner role in your organization.
