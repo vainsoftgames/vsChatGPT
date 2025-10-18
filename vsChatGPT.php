@@ -79,7 +79,7 @@
 		private function adjustPayloadForModel(&$payload){
 			if($payload && is_array($payload)){
 				$model = $payload['model'] ?? false;
-				if(strpos($model, 'o1') !== false || strpos($model, 'o3') !== false){
+				if(strpos($model, 'o1') !== false || strpos($model, 'o3') !== false || strpos($model, 'gpt-5') !== false){
 					// o1 uses max_completion_tokens instead of max_tokens
 					if(array_key_exists('max_tokens', $payload)){
 						$payload['max_completion_tokens'] = $payload['max_tokens'];
